@@ -10,6 +10,7 @@ namespace :rubber do
     set_timezone
     enable_multiverse
     upgrade_packages
+    install_core_packages
     install_packages
     setup_volumes
     setup_gem_sources
@@ -19,9 +20,16 @@ namespace :rubber do
 
   # Sets up instance to allow root access (e.g. recent canonical AMIs)
   def enable_root_ssh(ip, initial_ssh_user)
+    # Capistrano uses the :password variable for sudo commands.  Since this setting is generally used for the deploy user,
+    # but we need it this one time for the initial SSH user, we need to swap out and restore the password.
+    #
+    # We special-case the 'ubuntu' user since Amazon doesn't since the Canonical AMIs on EC2 don't set the password for
+    # this account, making any password prompt potentially confusing.
+    orig_password = fetch(:password)
+    set(:password, initial_ssh_user == 'ubuntu' || ENV.has_key?('RUN_FROM_VAGRANT') ? nil : Capistrano::CLI.password_prompt("Password for #{initial_ssh_user} @ #{ip}: "))
 
     task :_allow_root_ssh, :hosts => "#{initial_ssh_user}@#{ip}" do
-      rsudo "cp /home/#{initial_ssh_user}/.ssh/authorized_keys /root/.ssh/"
+      rsudo "mkdir -p /root/.ssh && cp /home/#{initial_ssh_user}/.ssh/authorized_keys /root/.ssh/"
     end
 
     begin
@@ -35,6 +43,9 @@ namespace :rubber do
         retry
       end
     end
+
+    # Restore the original deploy password.
+    set(:password, orig_password)
   end
 
   # Forces a direct connection
@@ -285,8 +296,20 @@ namespace :rubber do
     Install extra packages and gems.
   DESC
   task :install do
+    install_core_packages
     install_packages
     install_gems
+  end
+
+  desc <<-DESC
+    Install core packages that are needed before the general install_packages phase.
+  DESC
+  task :install_core_packages do
+    core_packages = [
+                      'python-software-properties', # Needed for add-apt-repository, which we use for adding PPAs.
+                       'bc'                         # Needed for comparing version numbers in bash, which we do for various setup functions.
+                    ]
+    rsudo "export DEBIAN_FRONTEND=noninteractive; apt-get -q -o Dpkg::Options::=--force-confold -y --force-yes install #{core_packages.join(' ')}"
   end
 
   desc <<-DESC
@@ -463,6 +486,7 @@ namespace :rubber do
           expanded_pkg_list << pkg_spec
         end
       end
+      expanded_pkg_list << 'ec2-ami-tools' if rubber_env.cloud_provider == 'aws'
       expanded_pkg_list.join(' ')
     end
 
@@ -515,11 +539,16 @@ namespace :rubber do
       if reboot
 
         logger.info "Rebooting ..."
-        run("#{sudo} reboot", :hosts => reboot_hosts)
+        begin
+          run("#{sudo} reboot", :hosts => reboot_hosts)
+          # since we rebooted, teardown the connections to force cap to reconnect
+          teardown_connections_to(sessions.keys)
+        rescue
+          # swallow exception since there is a chance
+          # net:ssh throws an Exception
+        end
+        
         sleep 30
-
-        # since we rebooted, teardown the connections to force cap to reconnect
-        teardown_connections_to(sessions.keys)
 
         reboot_hosts.each do |host|
           direct_connection(host) do

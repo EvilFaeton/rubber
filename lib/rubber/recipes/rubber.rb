@@ -28,8 +28,10 @@ namespace :rubber do
         # Disable connecting to any Windows instance.
         required_task(name, options.merge(:except => { :platform => 'windows' })) do
           # define empty roles for the case when a task has a role that we don't define anywhere
-          [*options[:roles]].each do |r|
-            roles[r] ||= []
+          unless options[:roles].respond_to?(:call)
+            [*options[:roles]].each do |r|
+              top.roles[r] ||= []
+            end
           end
           
           if find_servers_for_task(current_task).empty?
@@ -53,9 +55,9 @@ namespace :rubber do
     # Disable connecting to any Windows instance.
     # pass -l to bash in :shell to that run also gets full env
     # use a pty so we don't get "stdin: is not a tty" error output
-    default_run_options[:pty] = true
-    default_run_options[:shell] = "/bin/bash -l"
-    default_run_options[:except] = { :platform => 'windows' }
+    default_run_options[:pty] = true if default_run_options[:pty].nil?
+    default_run_options[:shell] = "/bin/bash -l" if default_run_options[:shell].nil?
+    default_run_options[:except] ||= { :platform => 'windows' }
 
     set :cloud, Rubber.cloud(self)
 
@@ -63,7 +65,8 @@ namespace :rubber do
     # NOTE: for some reason Capistrano requires you to have both the public and
     # the private key in the same folder, the public key should have the
     # extension ".pub".
-    ssh_options[:keys] = cloud.env.key_file
+
+    ssh_options[:keys] = [ENV['RUBBER_SSH_KEY'] || cloud.env.key_file].flatten.compact
     ssh_options[:timeout] = fetch(:ssh_timeout, 5)
   end
 

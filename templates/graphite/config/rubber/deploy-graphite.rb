@@ -1,8 +1,8 @@
 
 namespace :rubber do
-  
+
   namespace :graphite do
-    
+
     rubber.allow_optional_tasks(self)
 
     after "rubber:install_packages", "rubber:graphite:install_collectd_graphite_plugin"
@@ -17,53 +17,6 @@ namespace :rubber do
           make
           make test
           make install
-        fi
-      ENDSCRIPT
-    end
-
-    # graphite collectd plugin needs newer collectd (>= 4.9)
-    before "rubber:install_packages", "rubber:graphite:setup_apt_backport_of_collectd"
-
-    task :setup_apt_backport_of_collectd do
-      sources = <<-EOF
-        deb http://gb.archive.ubuntu.com/ubuntu/ maverick main universe
-        deb-src http://gb.archive.ubuntu.com/ubuntu/ maverick main universe
-      EOF
-      sources.gsub!(/^[ \t]*/, '')
-
-      prefs = <<-EOF
-        Package: *
-        Pin: release a=maverick
-        Pin-Priority: 400
-
-        Package: libxml2
-        Pin: release a=maverick
-        Pin-Priority: 900
-
-        Package: libxml2-dev
-        Pin: release a=maverick
-        Pin-Priority: 900
-
-        Package: collectd-core
-        Pin: release a=maverick
-        Pin-Priority: 900
-
-        Package: collectd-utils
-        Pin: release a=maverick
-        Pin-Priority: 900
-
-        Package: collectd
-        Pin: release a=maverick
-        Pin-Priority: 900
-      EOF
-      prefs.gsub!(/^[ \t]*/, '')
-
-      rubber.sudo_script 'setup_apt_backport_of_collectd', <<-ENDSCRIPT
-        release=`lsb_release -sr`
-        needs_backport=`echo "$release <= 10.04" | bc`
-        if [[ $needs_backport == 1 && ! -f /etc/apt/preferences.d/rubber-collectd ]]; then
-          echo -e #{sources.inspect} > /etc/apt/sources.list.d/rubber-collectd.list
-          echo -e #{prefs.inspect} > /etc/apt/preferences.d/rubber-collectd
         fi
       ENDSCRIPT
     end
@@ -142,6 +95,10 @@ namespace :rubber do
             cd /tmp/#{rubber_env.graphite_carbon_package_url.gsub(/.*\//, '').gsub('.tar.gz', '')}
             python setup.py install
 
+            rm -rf /opt/graphite/storage
+            mkdir #{rubber_env.graphite_storage_dir}
+            chown www-data:www-data #{rubber_env.graphite_storage_dir}
+            ln -s #{rubber_env.graphite_storage_dir} /opt/graphite/storage
           fi
         ENDSCRIPT
       end
@@ -172,6 +129,14 @@ namespace :rubber do
         stop
         start
       end
+
+      desc "Display status of graphite system monitoring"
+      task :status, :roles => :graphite_server do
+        rsudo "service graphite-server status || true"
+        rsudo "ps -eopid,user,cmd | grep [c]arbon || true"
+        rsudo "sudo netstat -tupln | grep [p]ython || true"
+      end
+
     end
 
     namespace :web do
@@ -183,7 +148,7 @@ namespace :rubber do
       else
         after "rubber:graphite:server:install", "rubber:graphite:web:install"
       end
-      
+
       after "rubber:graphite:server:bootstrap", "rubber:graphite:web:bootstrap"
 
       desc <<-DESC
@@ -232,20 +197,27 @@ EOF
         end
       end
 
-      desc "Start graphite system monitoring"
+      desc "Start graphite web server"
       task :start, :roles => :graphite_web do
-        rsudo "service apache2 start"
+        rsudo "service graphite-web start"
       end
 
-      desc "Stop graphite system monitoring"
+      desc "Stop graphite web server"
       task :stop, :roles => :graphite_web do
-        rsudo "service apache2 stop || true"
+        rsudo "service graphite-web stop || true"
       end
 
-      desc "Restart graphite system monitoring"
+      desc "Restart graphite web server"
       task :restart, :roles => :graphite_web do
         stop
         start
+      end
+
+      desc "Display status of graphite web server"
+      task :status, :roles => :graphite_web do
+        rsudo "service graphite-web status || true"
+        rsudo "ps -eopid,user,cmd | grep '[g]raphite/conf/uwsgi.ini' || true"
+        rsudo "netstat -tupln | grep uwsgi || true"
       end
 
     end

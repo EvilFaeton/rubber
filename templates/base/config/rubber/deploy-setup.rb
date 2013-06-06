@@ -7,40 +7,38 @@ namespace :rubber do
     task :install_ruby_build do
       rubber.sudo_script "install_ruby_build", <<-ENDSCRIPT
       if [[ ! `ruby-build --version 2> /dev/null` =~ "#{rubber_env.ruby_build_version}" ]]; then
-        wget -q https://github.com/sstephenson/ruby-build/tarball/v#{rubber_env.ruby_build_version} -O /tmp/ruby-build.tar.gz
+        echo "Installing ruby-build v#{rubber_env.ruby_build_version}"
+        wget -q https://github.com/sstephenson/ruby-build/archive/v#{rubber_env.ruby_build_version}.tar.gz -O /tmp/ruby-build.tar.gz
 
         # Install ruby-build.
         tar -C /tmp -zxf /tmp/ruby-build.tar.gz
-        cd /tmp/sstephenson-ruby-build-*
+        cd /tmp/ruby-build-*
         ./install.sh
 
         # Clean up after ourselves.
         cd /root
-        rm -rf /tmp/sstephenson-ruby-build-*
-        rm /tmp/ruby-build.tar.gz
+        rm -rf /tmp/ruby-build-*
+        rm -f /tmp/ruby-build.tar.gz
 
         # Get rid of RVM if this is an older rubber installation.
         if type rvm &> /dev/null; then
-          rvm implode
+          echo -en "yes\n" | rvm implode
 
           rm -rf /usr/local/rvm
-          rm /usr/bin/rvm*
-          rm ~/.gemrc
+          rm -f /usr/bin/rvm*
+          rm -f ~/.gemrc
         fi
       fi
       ENDSCRIPT
     end
 
-    # ensure that the profile script gets sourced by reconnecting
-    after "rubber:base:install_ruby_build" do
-      teardown_connections_to(sessions.keys)
-    end
-
     after "rubber:base:install_ruby_build", "rubber:base:install_ruby"
     task :install_ruby do
       rubber.sudo_script "install_ruby", <<-ENDSCRIPT
-      if [[ ! `ruby --version 2> /dev/null` =~ "#{rubber_env.ruby_version}" ]]; then
-        echo "Compiling and installing ruby $rvm_ver.  This may take a while ..."
+      installed_ruby_ver=`which ruby | cut -d / -f 5`
+      desired_ruby_ver="#{rubber_env.ruby_version}"
+      if [[ ! $installed_ruby_ver =~ $desired_ruby_ver ]]; then
+        echo "Compiling and installing ruby $desired_ruby_ver.  This may take a while ..."
 
         nohup ruby-build #{rubber_env.ruby_version} #{rubber_env.ruby_path} &> /tmp/install_ruby.log &
         sleep 1
@@ -55,6 +53,11 @@ namespace :rubber do
         echo "--- \ngem: --no-ri --no-rdoc" > /etc/gemrc
       fi
       ENDSCRIPT
+    end
+    
+    # ensure that the profile script gets sourced by reconnecting
+    after "rubber:base:install_ruby" do
+      teardown_connections_to(sessions.keys)
     end
 
     after "rubber:install_packages", "rubber:base:configure_git" if scm == "git"

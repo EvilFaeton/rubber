@@ -59,13 +59,17 @@ namespace :rubber do
   desc <<-DESC
     Live tail of rails log files for all machines
     By default tails the rails logs for the current RUBBER_ENV, but one can
-    set FILE=/path/file.*.glob to tails a different set
+    set FILE=/path/file.*.glob to tail a different set
   DESC
   task :tail_logs, :roles => :app do
+    last_host = ""
     log_file_glob = rubber.get_env("FILE", "Log files to tail", true, "#{current_path}/log/#{Rubber.env}*.log")
+    trap("INT") { puts 'Exiting...'; exit 0; }                    # handle ctrl-c gracefully
     run "tail -qf #{log_file_glob}" do |channel, stream, data|
-      puts  # for an extra line break before the host name
-      puts data
+      puts if channel[:host] != last_host                         # blank line between different hosts
+      host = "[#{channel.properties[:host].gsub(/\..*/, '')}]"    # get left-most subdomain
+      data.lines { |line| puts "%-15s %s" % [host, line] }        # add host name to the start of each line
+      last_host = channel[:host]
       break if stream == :err
     end
   end
@@ -81,48 +85,43 @@ namespace :rubber do
   def serial_task(ns, name, options = {}, &block)
     # first figure out server names for the passed in roles - when no roles
     # are passed in, use all servers
-    serial_roles = Array(options[:roles])
+    
+    serial_roles = Array(options[:roles].respond_to?(:call) ? options[:roles].call() : options[:roles])
     servers = {}
     if serial_roles.empty?
-      all_servers = []
-      self.roles.each do |rolename, serverdefs|
-        all_servers += serverdefs.collect {|server| server.host}
+      all_servers = top.roles.collect do |rolename, serverdefs|
+        serverdefs.collect(&:host)
       end
-      servers[:_serial_all] = all_servers.uniq.sort
+      servers[:_serial_all] = all_servers.flatten.uniq.sort
     else
-      # get servers for each role
-      self.roles.each do |rolename, serverdefs|
+      # Get servers for each role
+      top.roles.each do |rolename, serverdefs|
         if serial_roles.include?(rolename)
-          servers[rolename] ||= []
-          servers[rolename] += serverdefs.collect {|server| server.host}
+          servers[rolename] = serverdefs.collect(&:host)
         end
       end
 
       # Remove duplication of servers - roles which come first in list
       # have precedence, so the servers show up in that group
-      serial_roles.each_with_index do |rolename, i|
-        servers[rolename] ||= []
-        serial_roles[i+1..-1].each do |r|
-          servers[r] -= servers[rolename]
-        end
+      added_servers = []
+      serial_roles.each do |rolename|
+        servers[rolename] -= added_servers
+        added_servers << servers[rolename]
         servers[rolename] = servers[rolename].uniq.sort
       end
     end
 
-    # group each role's servers into slices, but combine slices across roles
+    # group each role's servers into slices and combine
     slices = []
     servers.each do |rolename, svrs|
-      next if svrs.size == 0
       # figure out size of each slice by dividing server count by # of groups
-      slice_size = (Float(svrs.size) / (options.delete(:groups) || 2)).round
-      slice_size = 1 if slice_size == 0
-      slice_idx = 0
-      svrs.each_slice(slice_size) do |srv_slice|
-        slices[slice_idx] ||= []
-        slices[slice_idx] += srv_slice
-        slice_idx += 1
-      end
+      slice_size = (svrs.size.to_f / (options.delete(:groups) || 2)).round
+      slice_size = 1 if slice_size < 1
+      
+      # add servers to slices
+      slices += svrs.each_slice(slice_size).to_a
     end
+    
     # for each slice, define a new task specific to the hosts in that slice
     task_syms = []
     slices.each do |server_group|
@@ -155,24 +154,24 @@ namespace :rubber do
     return local_alias
   end
 
-  def prepare_script(name, contents, stop_on_error_cmd=rubber_env.stop_on_error_cmd)
+  def prepare_script(name, contents, stop_on_error_cmd=rubber_env.stop_on_error_cmd, opts = {})
     script = "/tmp/#{name}"
     # this lets us abort a script if a command in the middle of it errors out
     contents = "#{stop_on_error_cmd}\n#{contents}" if stop_on_error_cmd
-    put(contents, script)
+    put(contents, script, opts)
     return script
   end
 
   def run_script(name, contents, opts = {})
     args = opts.delete(:script_args)
-    script = prepare_script(name, contents)
+    script = prepare_script(name, contents, rubber_env.stop_on_error_cmd, opts)
     run "bash #{script} #{args}", opts
   end
 
   def sudo_script(name, contents, opts = {})
     user = opts.delete(:as)
     args = opts.delete(:script_args)
-    script = prepare_script(name, contents)
+    script = prepare_script(name, contents, rubber_env.stop_on_error_cmd, opts)
 
     sudo_args = user ? "-H -u #{user}" : ""
     run "#{sudo} #{sudo_args} bash -l #{script} #{args}", opts
@@ -192,7 +191,9 @@ namespace :rubber do
     value = Capistrano::CLI.ui.ask(msg) unless value
     value = value.size == 0 ? default : value
     fatal "#{name} is required, pass using environment or enter at prompt" if required && ! value
-    return value
+
+    # Explicitly convert to a String to avoid weird serialization issues with Psych.
+    value.to_s
   end
 
   def fatal(msg, code=1)
@@ -227,6 +228,7 @@ namespace :rubber do
   def update_code_for_bootstrap
     unless (fetch(:rubber_code_was_updated, false))
       deploy.setup
+      logger.info "updating code for bootstrap"
       deploy.update_code
     end
   end

@@ -40,7 +40,7 @@ namespace :rubber do
     
     desc "Starts the nginx web server"
     task :start, :roles => :nginx do
-      rsudo "service nginx start"
+      rsudo "service nginx status || service nginx start"
     end
     
     desc "Restarts the nginx web server"
@@ -52,7 +52,14 @@ namespace :rubber do
     task :reload, :roles => :nginx do
       serial_reload
     end
-  
+
+    desc "Display status of the nginx web server"
+    task :status, :roles => :nginx do
+      rsudo "service nginx status || true"
+      rsudo "ps -eopid,user,fname | grep [n]ginx || true"
+      rsudo "netstat -tulpn | grep nginx || true"
+    end
+
   end
 
 end

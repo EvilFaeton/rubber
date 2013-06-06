@@ -10,7 +10,7 @@ Gem::Specification.new do |s|
   s.platform    = Gem::Platform::RUBY
   s.authors = ["Matt Conway", "Kevin Menard"]
   s.email       = ["matt@conwaysplace.com", "nirvdrum@gmail.com"]
-  s.homepage = "http://github.com/wr0ngway/rubber"
+  s.homepage = "https://github.com/rubber/rubber"
   s.summary = "A capistrano plugin for managing multi-instance deployments to the cloud (ec2)"
   s.description = <<-DESC
     The rubber plugin enables relatively complex multi-instance deployments of RubyOnRails applications to
@@ -29,8 +29,7 @@ Gem::Specification.new do |s|
   s.require_paths = ["lib"]
 
   s.add_dependency 'capistrano', '~> 2.12'
-  # TODO: force older version of net-ssh till connectivity issues with 2.5.x get resolved
-  s.add_dependency 'net-ssh', '~> 2.4.0'
+  s.add_dependency 'net-ssh', '~> 2.6'
   s.add_dependency 'thor'
   s.add_dependency 'clamp'
   s.add_dependency 'open4'

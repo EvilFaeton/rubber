@@ -17,6 +17,15 @@ namespace :rubber do
           rm -f #{rubber_env.torquebox_dir}
           ln -s #{rubber_env.torquebox_prefix}/torquebox-#{rubber_env.torquebox_version} #{rubber_env.torquebox_dir}
 
+          # Create the log dir.
+          mkdir -p #{rubber_env.torquebox_log_dir}
+          chown -R #{rubber_env.app_user} #{rubber_env.torquebox_log_dir}
+
+          # Set up libraries for graylog logger.
+          mkdir -p #{rubber_env.torquebox_dir}/jboss/modules/org/graylog2/logging/main
+          wget -qNO "#{rubber_env.torquebox_dir}/jboss/modules/org/graylog2/logging/main/gelfj-1.0.1.jar" https://github.com/downloads/t0xa/gelfj/gelfj-1.0.1.jar
+          wget -qNO "#{rubber_env.torquebox_dir}/jboss/modules/org/graylog2/logging/main/json-simple-1.1.1.jar" http://json-simple.googlecode.com/files/json-simple-1.1.1.jar
+
           # Cleanup after ourselves.
           rm torquebox-dist-#{rubber_env.torquebox_version}-bin.zip
         fi
@@ -46,11 +55,10 @@ namespace :rubber do
     on :load do
       rubber.serial_task self, :serial_reload, :roles => [:torquebox] do
         rsudo "touch #{jboss_home}/standalone/deployments/#{application}-knob.yml.dodeploy"
+        rsudo "if ! ps ax | grep -v grep | grep -c torque &> /dev/null; then service torquebox start; fi"
 
         # Wait for TorqueBox to startup before moving on so we don't remove all hosts from the cluster.
-        logger.info "Waiting for TorqueBox to startup"
-
-        #rsudo "while ! curl -s -f http://$HOSTNAME:#{rubber_env.torquebox_http_port} &> /dev/null; do echo .; sleep 1; done"
+        logger.info "Waiting for TorqueBox to deploy"
 
         # TorqueBox first "deploys" the app, then lets the web context startup.  While it's deploying,
         # the old context can still service requests.  So, we need to wait until the app is deployed before we can
@@ -80,6 +88,10 @@ namespace :rubber do
       rsudo "chown -R #{rubber_env.app_user}:#{rubber_env.app_user} #{shared_path}/cache"
     end
 
+    before "deploy:stop", "rubber:torquebox:stop"
+    after "deploy:start", "rubber:torquebox:start"
+    after "deploy:restart", "rubber:torquebox:reload"
+
     task :restart, :roles => :torquebox do
       stop
       start
@@ -90,10 +102,8 @@ namespace :rubber do
     end
 
     task :start, :roles => :torquebox do
-      rsudo "service torquebox start || true"
+      rsudo "service torquebox start"
     end
-
-    after "deploy:restart", "rubber:torquebox:reload"
 
     desc "Reloads the apache web server"
     task :reload, :roles => :torquebox do

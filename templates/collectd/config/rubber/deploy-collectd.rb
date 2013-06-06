@@ -22,7 +22,7 @@ namespace :rubber do
 
     desc "Start collectd system monitoring"
     task :start, :roles => :collectd do
-      rsudo "service collectd start"
+      rsudo "service collectd status || service collectd start"
     end
     
     desc "Stop collectd system monitoring"
@@ -41,6 +41,12 @@ namespace :rubber do
       # Need to kill rubber collectd runner script to force collectd to restart
       # it after deploy so that the runner script gets the new paths
       rsudo "pkill -fn #{rubber_env.rubber_collectd_runner.sub(/./, '[\0]')} ; exit 0"
+    end
+
+    desc "Display status of collectd system monitoring"
+    task :status, :roles => :collectd do
+      rsudo "service collectd status || true"
+      rsudo "ps -eopid,user,fname | grep [c]ollectd || true"
     end
 
   end

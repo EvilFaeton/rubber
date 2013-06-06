@@ -57,7 +57,7 @@ cloud_providers:
     #
     access_key: XXX
     secret_access_key: YYY
-    account: ZZZ
+    account: 'ZZZ'
 
     # REQUIRED:  The name of the amazon keypair and location of its private key
     #
@@ -83,8 +83,8 @@ cloud_providers:
     # Ubuntu 12.04 Precise instance-store 64-bit: ami-eafa5883
     #
     # m1.small or m1.large or m1.xlarge
-    image_type: m1.small
-    image_id: ami-eafa5883
+    image_type: c1.medium
+    image_id: ami-b6089bdf
 
     # EBS I/O optimized instace
     # EBS-optimized instances deliver dedicated throughput between Amazon EC2 and Amazon EBS, with options 
@@ -104,7 +104,20 @@ cloud_providers:
     # If a spot instance request can't be fulfilled in 3 minutes, fallback to on-demand instance creation.  If not set,
     # the default is infinite.
     # spot_instance_request_timeout: 180
-    
+
+  digital_ocean:
+    # REQUIRED: The Digital Ocean region that you want to use.
+    #
+    # Options include
+    # New York 1
+    # Amsterdam 1
+    #
+    region: New York 1
+
+    # REQUIRED: The image name and type for creating instances.
+    image_id: Ubuntu 12.04 x64 Server
+    image_type: 512MB
+
   # Use an alternate cloud provider supported by fog.  This doesn't fully work
   # yet due to differences in providers within fog, but gives you a starting
   # point for contributing a new provider to rubber.  See rubber/lib/rubber/cloud(.rb)
@@ -124,7 +137,7 @@ cloud_provider: aws
 # 
 # Allowed forms are:
 # filesystem: "file:#{Rubber.root}/config/rubber/instance-#{Rubber.env}.yml"
-# cloud storage (s3): "storage:#{cloud_provider.aws.backup_bucket}/RubberInstances_#{app_name}/instance-#{Rubber.env}.yml"
+# cloud storage (s3): "storage:#{cloud_providers.aws.backup_bucket}/RubberInstances_#{app_name}/instance-#{Rubber.env}.yml"
 # cloud table (simpledb): "table:RubberInstances_#{app_name}_#{Rubber.env}"
 #
 # If you need to port between forms, load the rails console then:
@@ -141,6 +154,12 @@ cloud_provider: aws
 # your project code, so that provides some safety.
 #
 # instance_storage_backup: "storage:#{cloud_providers.aws.backup_bucket}/RubberInstances_#{app_name}/instance-#{Rubber.env}-#{Time.now.strftime('%Y%m%d-%H%M%S')}.yml"
+
+# OPTIONAL: Default ports for security groups
+web_port: 80
+web_ssl_port: 443
+web_tools_port: 8080
+web_tools_ssl_port: 8443
 
 # OPTIONAL: Define security groups
 # Each security group is a name associated with a sequence of maps where the
@@ -172,9 +191,36 @@ security_groups:
         from_port: 22
         to_port: 22
         source_ips: [0.0.0.0/0]
+  web:
+    description: "To open up port #{web_port}/#{web_ssl_port} for http server on web role"
+    rules:
+      - protocol: tcp
+        from_port: "#{web_port}"
+        to_port: "#{web_port}"
+        source_ips: [0.0.0.0/0]
+      - protocol: tcp
+        from_port: "#{web_ssl_port}"
+        to_port: "#{web_ssl_port}"
+        source_ips: [0.0.0.0/0]
+  web_tools:
+    description: "To open up port #{web_tools_port}/#{web_tools_ssl_port} for internal/tools http server"
+    rules:
+      - protocol: tcp
+        from_port: "#{web_tools_port}"
+        to_port: "#{web_tools_port}"
+        source_ips: [0.0.0.0/0]
+      - protocol: tcp
+        from_port: "#{web_tools_ssl_port}"
+        to_port: "#{web_tools_ssl_port}"
+        source_ips: [0.0.0.0/0]
 
 # OPTIONAL: The default security groups to create instances with
 assigned_security_groups: [default]
+roles:
+  web:
+    assigned_security_groups: [web]
+  web_tools:
+    assigned_security_groups: [web_tools]
 
 # OPTIONAL: Automatically create security groups for each host and role
 # EC2 doesn't allow one to change what groups an instance belongs to after
@@ -194,10 +240,10 @@ prompt_for_security_group_sync: true
 # OPTIONAL: The packages to install on all instances
 # You can install a specific version of a package by using a sub-array of pkg, version
 # For example, packages: [[rake, 0.7.1], irb]
-packages: [postfix, build-essential, git-core, ec2-ami-tools, libxslt-dev, ntp]
+packages: [postfix, build-essential, git-core, libxslt-dev, ntp]
 
 # OPTIONAL: gem sources to setup for rubygems
-# gemsources: ["http://rubygems.org", "http://gems.github.com"]
+# gemsources: ["https://rubygems.org"]
 
 # OPTIONAL: The gems to install on all instances
 # You can install a specific version of a gem by using a sub-array of gem, version
@@ -235,10 +281,10 @@ stop_on_error_cmd: "function error_exit { exit 99; }; trap error_exit ERR"
 #           of zones
 # availability_zone: us-east-1a
 
-# OPTIONAL: If you want t use Elastic Block Store (EBS) persistent
+# OPTIONAL: If you want to use Elastic Block Store (EBS) persistent
 # volumes, add them to host specific overrides and they will get created
 # and assigned to the instance.  On initial creation, the volume will get
-# attached _and_ formatted, but if your host disapears and you recreate
+# attached _and_ formatted, but if your host disappears and you recreate
 # it, the volume will only get remounted thereby preserving your data
 #
 # hosts:

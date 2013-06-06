@@ -2,12 +2,14 @@ graphite_dir: "/opt/graphite"
 graphite_server_pid_file: /var/run/graphite-server.pid
 graphite_server_port: 2003
 graphite_web_port: 2080
+graphite_carbon_port: 8002
+graphite_storage_dir: /mnt/graphite_storage
 
 # uncomment out the repo version to install from given repo version
 # graphite_repo_version: 426
-graphite_whisper_package_url: http://launchpad.net/graphite/0.9/0.9.9/+download/whisper-0.9.9.tar.gz
-graphite_carbon_package_url: http://launchpad.net/graphite/0.9/0.9.9/+download/carbon-0.9.9.tar.gz
-graphite_web_package_url: http://launchpad.net/graphite/0.9/0.9.9/+download/graphite-web-0.9.9.tar.gz
+graphite_whisper_package_url: https://github.com/downloads/graphite-project/whisper/whisper-0.9.10.tar.gz
+graphite_carbon_package_url: https://github.com/downloads/graphite-project/carbon/carbon-0.9.10.tar.gz
+graphite_web_package_url: https://github.com/downloads/graphite-project/graphite-web/graphite-web-0.9.10.tar.gz
 
 web_tools_proxies:
   graphite:
@@ -17,6 +19,6 @@ web_tools_proxies:
 
 roles:
   graphite_web:
-    packages: [python-django, python-django-tagging, apache2, libapache2-mod-wsgi, python-cairo, python-memcache, memcached, sqlite3, bzr, zip]
+    packages: [python-django, python-django-tagging, python-cairo, python-memcache, memcached, uwsgi, uwsgi-plugin-python, uwsgi-plugin-http, sqlite3, bzr, zip]
   collectd:
     packages: [libperl-dev]
